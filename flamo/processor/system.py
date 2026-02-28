@@ -326,11 +326,11 @@ class Series(nn.Sequential):
     def probe_w(self, w: torch.Tensor, ext_param=None):
         r"""
         Evaluate the series transfer matrix at :math:`w = z^{-1}`.
-        Uses each module's :meth:`probe_w` if present, else :meth:`probe(w)`.
+        Uses each module's :meth:`probe_w` if present.
         """
         H = None
         for module in self:
-            probe_fn = getattr(module, 'probe_w', None) or getattr(module, 'probe', None)
+            probe_fn = getattr(module, 'probe_w', None)
             if probe_fn is None:
                 continue
             Hi = probe_fn(w, ext_param)
@@ -538,8 +538,9 @@ class Recursion(nn.Module):
             **Returns**:
                 torch.Tensor: Transfer matrix ``(N_out, N_in)`` (complex).
         """
-        F = self.feedforward.probe(z, ext_param)
-        B = self.feedback.probe(z, ext_param)
+        ext_param_ff, ext_param_fb = self._split_ext_param(ext_param)
+        F = self.feedforward.probe(z, ext_param_ff)
+        B = self.feedback.probe(z, ext_param_fb)
         N = F.shape[0]
         I = torch.eye(N, dtype=F.dtype, device=F.device)
         A = I - F @ B
@@ -643,8 +644,10 @@ class Recursion(nn.Module):
         Used for numerical stability when :math:`|z| < 1` (evaluate in w-plane).
         """
         ext_param_ff, ext_param_fb = self._split_ext_param(ext_param)
-        probe_ff = getattr(self.feedforward, 'probe_w', None) or self.feedforward.probe
-        probe_fb = getattr(self.feedback, 'probe_w', None) or self.feedback.probe
+        probe_ff = getattr(self.feedforward, 'probe_w', None)
+        probe_fb = getattr(self.feedback, 'probe_w', None)
+        if probe_ff is None or probe_fb is None:
+            raise NotImplementedError("probe_w not implemented for feedforward or feedback branches")
         F = probe_ff(w, ext_param_ff)
         B = probe_fb(w, ext_param_fb)
         N = F.shape[0]
@@ -868,8 +871,16 @@ class Parallel(nn.Module):
             **Returns**:
                 torch.Tensor: Transfer matrix (complex).
         """
-        H_A = self.branchA.probe(z, ext_param)
-        H_B = self.branchB.probe(z, ext_param)
+        ext_param_brA = None
+        ext_param_brB = None
+        if ext_param is not None:
+            for key, param in ext_param.items():
+                if 'branchA' in key:
+                    ext_param_brA = param
+                elif 'branchB' in key:
+                    ext_param_brB = param
+        H_A = self.branchA.probe(z, ext_param_brA)
+        H_B = self.branchB.probe(z, ext_param_brB)
         if self.sum_output:
             return H_A + H_B
         else:

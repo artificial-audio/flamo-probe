@@ -776,6 +776,26 @@ class HouseholderMatrix(Gain):
                 f"parameter shape = {self.size} not compatible with input signal of shape = ({x.shape})."
             )
 
+    def probe(self, z: torch.Tensor, ext_param=None):
+        r"""
+        Evaluate the Householder transfer matrix H(z) at arbitrary complex z.
+
+        For a frequency-independent Householder matrix, H(z) = I - 2*u*u^T.
+
+            **Returns**:
+                torch.Tensor: ``(N, N)`` complex transfer matrix.
+        """
+        param = ext_param if ext_param is not None else self.param
+        u = self.map(param)
+        N = u.shape[0]
+        I = torch.eye(N, dtype=u.dtype, device=u.device)
+        uuT = torch.matmul(u, u.transpose(0, 1))
+        return I - 2 * uuT
+
+    def probe_w(self, w: torch.Tensor, ext_param=None):
+        r"""Evaluate at :math:`w = z^{-1}`; Householder matrix is constant, so same as :meth:`probe`."""
+        return self.probe(w, ext_param)
+
     def get_io(self):
         r"""
         Computes the number of input and output channels based on the size parameter.
